@@ -147,27 +147,77 @@ function saveConsultationPDF(){
 function showResults(){let r=calculate();document.getElementById('quiz').classList.add('hidden');document.getElementById('results').classList.remove('hidden');document.getElementById('profileTitle').textContent=r.type;document.getElementById('profileSummary').textContent='주력 전략은 '+r.first.s+'이며, 현재 점수와 앞으로 키우고 싶은 힘을 함께 살펴보세요.';document.getElementById('chart1').innerHTML=radar(r.rows.map(x=>x.current));document.getElementById('chart2').innerHTML=radar(r.rows.map(x=>x.current),r.rows.map(x=>x.need));document.getElementById('scoreRows').innerHTML=r.rows.map(x=>`<tr><td><b>${x.s}</b></td><td>${x.current.toFixed(1)}</td><td>${x.need.toFixed(1)}</td><td>${x.gap>0?'+':''}${x.gap.toFixed(1)}</td><td><span class="pill">${x.level}</span></td></tr>`).join('');let ex=DATA.explanations;let details=`<div class="detail"><div class="label">프로필 해석</div><h3>주력 전략 · ${r.first.s}</h3><p>${ex[r.first.s].strength}</p><p class="muted">함께 읽을 인물: ${ex[r.first.s].people}</p></div>`;if(r.second.current!==r.first.current)details+=`<div class="detail"><div class="label">차순위 전략</div><h3>${r.second.s}</h3><p>${ex[r.second.s].strength}</p><p class="muted">함께 읽을 인물: ${ex[r.second.s].people}</p></div>`;if(r.improvement){details+=`<div class="detail"><div class="label">보완 전략 · 필요도와 현재 점수의 격차가 가장 큰 전략</div><h3>${r.improvement.s} <span class="pill">격차 +${r.improvement.gap.toFixed(1)}</span></h3><p>${ex[r.improvement.s].improve}</p><p class="muted">함께 읽을 인물: ${ex[r.improvement.s].people}</p></div>`}else details+=`<div class="detail"><h3>뚜렷한 보완 필요 없음</h3><p>현재 점수보다 더 키우고 싶다고 응답한 전략이 뚜렷하지 않습니다. 지금의 강점을 유지하면서 새로운 성장 목표를 탐색해 보세요.</p></div>`;details+=`<div class="detail"><div class="label">응답 점검</div>${r.warnings.map(w=>`<p>${w}</p>`).join('')}</div><p class="muted small">각 전략의 점수는 현재 응답을 바탕으로 한 상대적 지표이며, 능력의 절대적 수준이나 미래 성과를 예측하지 않습니다.</p>`;document.getElementById('summaryDetails').innerHTML=details;let ctx=CONTEXTS[currentContext]||CONTEXTS.self;let actions=`<div class="detail"><div class="label">선택한 상황 · ${ctx.label}</div><h3>이번 달의 성장 방향</h3><p>${ctx.focus}</p></div>`;if(r.improvement){actions+=`<div class="detail"><div class="label">우선 실천 전략</div><h3>${r.improvement.s} · 오늘의 작은 실행</h3><p>${ex[r.improvement.s].action}</p><p class="muted">이 행동을 선택한 상황에서 어떻게 실행할지 구체적인 시간과 장소를 정해 보세요.</p></div>`}let complementary=r.rows.filter(x=>x.s!==r.improvement?.s).sort((a,b)=>b.gap-a.gap)[0];if(complementary&&complementary.gap>0){actions+=`<div class="detail"><div class="label">함께 활용할 전략</div><h3>${complementary.s}</h3><p>${ex[complementary.s].improve}</p></div>`}actions+=`<div class="notice">점수는 능력의 절대적 평가가 아니며, 격차가 크다고 해서 반드시 부족한 것은 아닙니다. 이번 결과를 작은 실험의 출발점으로 활용하세요.</div>`;document.getElementById('actionDetails').innerHTML=actions;window.__growthActions=actions;save();window.scrollTo(0,0)}
 function restartTest(){if(confirm('응답을 초기화하고 처음부터 다시 진단할까요?')){Object.keys(answers).forEach(k=>{Object.keys(answers[k]).forEach(n=>delete answers[k][n])});idx=0;save();document.getElementById('results').classList.add('hidden');document.getElementById('intro').classList.remove('hidden');document.getElementById('resumeBtn').textContent='이어서 하기'}}function toast(t){let el=document.getElementById('toast');el.textContent=t;el.style.display='block';setTimeout(()=>el.style.display='none',2000)}
 window.addEventListener('load',()=>{renderContext();if(load()){document.getElementById('resumeBtn').textContent='이어서 하기 ('+countAnswered()+'/40)'}});
-</script><script type="module">
-/* CounterAPI setup: replace COUNTER_WORKSPACE after creating your free workspace.
-   Owner test URL: /diagnosis/?owner=1 (owner completion is not counted). */
-import { Counter } from "https://cdn.jsdelivr.net/npm/counterapi/dist/counter.esm.min.js";
-const COUNTER_WORKSPACE = "REPLACE_WITH_YOUR_COUNTERAPI_WORKSPACE";
-const COUNTER_NAME = "growth-diagnosis-completed";
+</script><script>
+/* Google Sheets completion counter.
+   After deploying the Apps Script web app, paste its /exec URL below.
+   Owner test URL: /diagnosis/?owner=1 (owner completions are not counted). */
+const SHEETS_COUNTER_URL = "https://script.google.com/macros/s/AKfycbx8DrZyAV-bYBr3YE2YHBYu3rIKU5BIe09WEr8owQ60WQJvoTiafgcmM2DJDq0pDYuc/exec";
 const OWNER_MODE = new URLSearchParams(location.search).get("owner") === "1";
-const COUNTED_KEY = "growth_diagnosis_completed_v15";
-let completionCounter = null;
-function counterReady(){return COUNTER_WORKSPACE && !COUNTER_WORKSPACE.startsWith("REPLACE_");}
+const VISITOR_ID_KEY = "growth_diagnosis_anonymous_visitor_v1";
+let counterRequestNo = 0;
+
+function counterReady(){
+  return SHEETS_COUNTER_URL.startsWith("https://script.google.com/macros/s/") &&
+         SHEETS_COUNTER_URL.endsWith("/exec");
+}
+function getAnonymousVisitorId(){
+  try {
+    let id = localStorage.getItem(VISITOR_ID_KEY);
+    if (!id) {
+      id = (crypto && crypto.randomUUID) ? crypto.randomUUID() :
+        "v-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+      localStorage.setItem(VISITOR_ID_KEY, id);
+    }
+    return id;
+  } catch(e) { return null; }
+}
+function callSheetsCounter(action){
+  return new Promise((resolve,reject)=>{
+    if(!counterReady()){reject(new Error("Google Sheets URL is not configured"));return;}
+    const callbackName="growthCounterCallback"+(++counterRequestNo);
+    const script=document.createElement("script");
+    const timer=setTimeout(()=>finish(new Error("timeout")),10000);
+    function finish(error,data){
+      clearTimeout(timer);
+      try{delete window[callbackName];}catch(e){window[callbackName]=undefined;}
+      script.remove();
+      if(error)reject(error);else resolve(data);
+    }
+    window[callbackName]=(data)=>finish(null,data);
+    const params=new URLSearchParams({action,callback:callbackName});
+    if(action==="complete"){
+      const visitorId=getAnonymousVisitorId();
+      if(!visitorId){finish(new Error("localStorage unavailable"));return;}
+      params.set("visitorId",visitorId);
+    }
+    script.onerror=()=>finish(new Error("request failed"));
+    script.src=SHEETS_COUNTER_URL+"?"+params.toString();
+    document.head.appendChild(script);
+  });
+}
 async function loadCompletionCount(){
- const el=document.getElementById("completionCount");
- if(!el||!counterReady()){if(el)el.textContent="준비 중";return;}
- try{completionCounter=new Counter({workspace:COUNTER_WORKSPACE});const r=await completionCounter.get(COUNTER_NAME);el.textContent=Number(r.value||0).toLocaleString("ko-KR");}catch(e){el.textContent="-";}
+  const el=document.getElementById("completionCount");
+  if(!el)return;
+  if(!counterReady()){el.textContent="설정 중";return;}
+  try{
+    const result=await callSheetsCounter("count");
+    el.textContent=Number(result.count||0).toLocaleString("ko-KR");
+  }catch(e){el.textContent="-";}
 }
 async function recordCompletion(){
- if(OWNER_MODE||!counterReady()||localStorage.getItem(COUNTED_KEY)==="1")return;
- try{if(!completionCounter)completionCounter=new Counter({workspace:COUNTER_WORKSPACE});const r=await completionCounter.up(COUNTER_NAME);localStorage.setItem(COUNTED_KEY,"1");const el=document.getElementById("completionCount");if(el&&r&&r.value!==undefined)el.textContent=Number(r.value).toLocaleString("ko-KR");}catch(e){}
+  if(OWNER_MODE||!counterReady())return;
+  try{
+    const result=await callSheetsCounter("complete");
+    const el=document.getElementById("completionCount");
+    if(el&&result&&result.count!==undefined)
+      el.textContent=Number(result.count).toLocaleString("ko-KR");
+  }catch(e){/* Counting failure must not block the diagnosis result. */}
 }
 window.addEventListener("DOMContentLoaded",loadCompletionCount);
 const originalShowResults=window.showResults;
-window.showResults=async function(){originalShowResults();await recordCompletion();};
+window.showResults=function(){
+  originalShowResults();
+  recordCompletion();
+};
 </script>
 </body></html>
